@@ -28,8 +28,9 @@
 ├── README.md                         # 项目介绍与使用指南
 ├── LICENSE                           # GPL-3.0 许可证
 ├── scripts/
-│   ├── preflight.sh                  # 只读系统体检脚本（OS、工具链、快捷键、状态栏状态）
+│   ├── preflight.sh                  # 只读系统体检脚本（OS、工具链、快捷键、状态栏、语音链路）
 │   ├── setup-omarchy.sh              # 幂等一键配置脚本（支持分段参数）
+│   ├── test-setup.sh                 # 沙箱回归测试（自带伪 Omarchy 环境，CI 用）
 │   ├── horae-flash                   # 闪念录入启动器
 │   ├── horae-normal                  # 主应用 TUI 启动器
 │   └── horae-clip                    # 剪贴板快速录入 + 桌面通知

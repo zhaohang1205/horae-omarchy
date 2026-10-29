@@ -64,12 +64,9 @@ else
 fi
 
 # 安装工具链检测
-CARGO_READY=false
-NPM_READY=false
 if command -v cargo >/dev/null 2>&1; then
     CARGO_VER=$(cargo --version | cut -d' ' -f1,2)
     ok "Rust / Cargo 可用 ($CARGO_VER)"
-    CARGO_READY=true
 else
     info "Cargo 未安装（可选用于 `cargo install horae`）"
 fi
@@ -77,7 +74,6 @@ fi
 if command -v npm >/dev/null 2>&1; then
     NPM_VER=$(npm --version)
     ok "Node.js / npm 可用 (v$NPM_VER)"
-    NPM_READY=true
 else
     info "npm 未安装（可选用于 `npm i -g horae-cli`）"
 fi
