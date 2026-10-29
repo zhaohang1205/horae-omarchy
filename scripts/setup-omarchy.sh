@@ -3,7 +3,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SKILL_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -43,12 +42,12 @@ normalize_key() {
 # 注释行会被剥离，避免把文档里的示例当成真实绑定。
 build_binding_index() {
     local omarchy_path="${OMARCHY_PATH:-/usr/share/omarchy}"
-    local dir file key desc
+    local dir file key
 
     if command -v omarchy >/dev/null 2>&1 && command -v hyprctl >/dev/null 2>&1; then
         omarchy menu keybindings --print 2>/dev/null \
             | sed -nE 's/^(.+[^ ]) +→ +(.+)$/\1\t\2/p' \
-            | while IFS=$'\t' read -r key desc; do
+            | while IFS=$'\t' read -r key _; do
                 [ -n "$key" ] && printf '%s\t%s\n' "$(normalize_key "$key")" "$key (运行时)"
               done
     fi
@@ -190,7 +189,7 @@ while [ $# -gt 0 ]; do
 done
 
 # 0. 权限与私有配置目录保障
-mkdir -p -m 700 "$HOME/.config/horae"
+mkdir -p "$HOME/.config/horae" && chmod 700 "$HOME/.config/horae"
 mkdir -p "$HOME/.local/bin"
 
 find_horae() {
@@ -381,10 +380,8 @@ setup_aliases() {
     [ -f "$HOME/.bashrc" ] && TARGET_RCS+=("$HOME/.bashrc")
 
     for rc in "${TARGET_RCS[@]}"; do
-        local MODIFIED=false
         if ! grep -Eq '^[[:space:]]*alias[[:space:]]+hc=' "$rc" 2>/dev/null; then
             echo "alias hc='horae capture'                 # 快速捕获任务" >> "$rc"
-            MODIFIED=true
             ok "已在 $rc 中添加 alias hc='horae capture'"
         else
             ok "$rc 中已存在 alias hc，保留用户配置"
@@ -392,7 +389,6 @@ setup_aliases() {
 
         if ! grep -Eq '^[[:space:]]*alias[[:space:]]+hcc=' "$rc" 2>/dev/null; then
             echo "alias hcc='horae capture --clip'         # 快速捕获剪贴板内容" >> "$rc"
-            MODIFIED=true
             ok "已在 $rc 中添加 alias hcc='horae capture --clip'"
         else
             ok "$rc 中已存在 alias hcc，保留用户配置"
