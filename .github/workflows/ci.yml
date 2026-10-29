@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shell:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: |
+          for f in scripts/*.sh scripts/horae-clip scripts/horae-flash scripts/horae-normal; do
+            bash -n "$f" || exit 1
+          done
+
+      - name: ShellCheck
+        run: shellcheck --severity=warning scripts/*.sh scripts/horae-clip scripts/horae-flash scripts/horae-normal
+
+      - name: Sandbox regression tests
+        run: bash scripts/test-setup.sh
