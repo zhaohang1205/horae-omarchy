@@ -103,7 +103,7 @@ if [ -f "$BINDINGS_LUA" ]; then
     if grep -q "horae-flash" "$BINDINGS_LUA" || grep -q "horae.*-f" "$BINDINGS_LUA"; then
         ok "已配置快捷键: 闪念录入模式 (Flash capture)"
     else
-        warn "未配置快捷键: 闪念录入模式 (推荐绑定至 SUPER + I)"
+        warn "未配置快捷键: 闪念录入模式 (推荐绑定至 F8)"
     fi
 
     if grep -q "horae-normal" "$BINDINGS_LUA" || grep -q "omarchy-launch-or-focus-tui.*horae" "$BINDINGS_LUA"; then

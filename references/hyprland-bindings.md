@@ -8,12 +8,12 @@ Horae 与 Omarchy 系统结合时，推荐配置三组核心交互方式：
 
 | 快捷键 | 动作 | 原理与调用目标 | 体验特色 |
 |---|---|---|---|
-| `SUPER + I` | 闪念录入模式 (Flash) | `{ tui = "horae-flash", focus = true }` | 居中浮动小窗，快速输入标题/标签/周期，回车后瞬间保存入库并秒级关闭，零上下文干扰 |
+| `F8` | 闪念录入模式 (Flash) | `{ tui = "horae-flash", focus = true }` | 居中浮动小窗，快速输入标题/标签/周期，回车后瞬间保存入库并秒级关闭；打开后再按 `F8` 可开始/结束语音录入 |
 | `SUPER + SHIFT + I` | 应用一般模式 (Normal) | `{ tui = "horae-normal", focus = true }` | 呼出或聚焦（已打开时自动切到前台）完整的 GTD 交互视图 |
 | `CTRL + 1` | 剪贴板快速捕获 (Clip) | `~/.local/bin/horae-clip` | 自动复制鼠标划选内容（或剪贴板文本）至收件箱，并弹出 `notify-send` 确认提示 |
-| `Alt + V` / `F8` | horae 内置语音录入 | 在 horae 输入框内 | horae 自带：`pw-record` 录音 → `voxtype transcribe` 转写 → 文本直接落进输入框。**不需要额外脚本** |
+| `Alt + V` / `F8`（窗口内） | horae 内置语音录入 | horae 输入框获得焦点时 | 闪念窗用 `F8` 打开后，再按 `F8` 开始/结束语音录入；Horae 自带转写，无需额外脚本 |
 
-> 上表为首选键位。在原生 Omarchy 上 `SUPER + I` 与 `SUPER + SHIFT + I` 默认被输入法切换占用，实际落地键位以脚本运行结束时的报告为准（见下方「快捷键冲突排查」）。
+> 上表为首选键位。闪念录入默认使用 `F8`；若与用户自定义绑定冲突，脚本会依次尝试 `SUPER + ALT + I`、`SUPER + ALT + C`。在 Horae 输入框中再按一次 `F8` 可启动或结束语音录入。一般模式的 `SUPER + SHIFT + I` 在原生 Omarchy 上默认被输入法切换占用，实际落地键位以脚本运行结束时的报告为准。
 
 ## 2. bindings.lua 配置示例
 
@@ -25,7 +25,7 @@ Horae 与 Omarchy 系统结合时，推荐配置三组核心交互方式：
 -- ============================================================================
 
 -- 闪念录入模式：按下立即弹出小型录入框
-o.bind("SUPER + I", "Horae (Flash)", { tui = "horae-flash", focus = true })
+o.bind("F8", "Horae (Flash)", { tui = "horae-flash", focus = true })
 
 -- 一般模式：按下平滑呼出或聚焦完整交互视图
 o.bind("SUPER + SHIFT + I", "Horae (Normal)", { tui = "horae-normal", focus = true })
@@ -38,7 +38,7 @@ o.bind("CTRL + 1", "Horae clip capture", os.getenv("HOME") .. "/.local/bin/horae
 
 在添加快捷键前，可运行以下命令检查是否有按键冲突：
 ```bash
-omarchy menu keybindings --print | grep "SUPER + I"
+omarchy menu keybindings --print | grep "F8"
 ```
 
 > [!IMPORTANT]
@@ -52,13 +52,13 @@ omarchy menu keybindings --print | grep "SUPER + I"
 
 | 动作 | 候选链 |
 |---|---|
-| Flash | `SUPER + I` → `SUPER + ALT + I` → `SUPER + ALT + C` |
+| Flash | `F8` → `SUPER + ALT + I` → `SUPER + ALT + C` |
 | Normal | `SUPER + SHIFT + I` → `SUPER + ALT + SHIFT + I` → `SUPER + ALT + N` |
 | Clip | `CTRL + 1` → `SUPER + ALT + C` → `SUPER + ALT + SHIFT + C` |
 
 想固定某个键位，用环境变量覆盖（冲突时脚本会报错并跳过，不会强行占用）：
 ```bash
-HORAE_FLASH_KEY="SUPER + ALT + I" ./scripts/setup-omarchy.sh --shortcuts
+HORAE_FLASH_KEY="F8" ./scripts/setup-omarchy.sh --shortcuts
 ```
 
 ## 3. hyprland.lua 浮动与尺寸规则
@@ -110,7 +110,7 @@ F9（按住说话）→ voxtype 转写 → 写入剪贴板并向焦点窗口发�
 
 **路径二（horae 内置）**
 
-在 horae 的输入框里按 `Alt+V`（或 `F8`）开始录音，再按一次结束。horae 自己调 `pw-record` 录音、调 `voxtype transcribe` 转写，文本直接进输入框。这条路不经过剪贴板，因此不受粘贴键设置影响，但仍受麦克风静音影响。
+在 horae 的输入框里按 `Alt+V` 或 `F8` 开始录音，再按一次结束。闪念浮窗的全局触发键默认也改为 `F8`：第一次按下打开浮窗，浮窗获得焦点后再按一次开始录音，结束时再按一次。horae 自己调 `pw-record` 录音、调 `voxtype transcribe` 转写，文本直接进输入框。这条路不经过剪贴板，因此不受粘贴键设置影响，但仍受麦克风静音影响。
 
 ### voxtype 的两条触发路径只能留一条
 
