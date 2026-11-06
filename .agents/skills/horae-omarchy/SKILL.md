@@ -62,10 +62,10 @@ bash <skill-dir>/scripts/preflight.sh
 为了保障极致的心流体验，在 `~/.config/hypr/bindings.lua` 与 `~/.config/hypr/hyprland.lua` 中配置三大快捷入口：
 
 > [!IMPORTANT]
-> **写入前必须先做按键冲突检测。** Omarchy 默认把 `SUPER + I` / `SUPER + SHIFT + I` 绑定给输入法切换，直接追加会造成重复绑定。`setup-omarchy.sh` 会扫描运行时绑定表与所有 `*.lua` 配置（自动剥离注释），冲突时按候选链自动降级，并在结束时打印实际生效的键位；也可用 `HORAE_FLASH_KEY` / `HORAE_NORMAL_KEY` / `HORAE_CLIP_KEY` 显式指定。
+> **写入前必须先做按键冲突检测。** `setup-omarchy.sh` 会扫描运行时绑定表与所有 `*.lua` 配置（自动剥离注释），冲突时按候选链自动降级，并在结束时打印实际生效的键位；也可用 `HORAE_FLASH_KEY` / `HORAE_NORMAL_KEY` / `HORAE_CLIP_KEY` 显式指定。
 
 1. **闪念录入模式（Flash Capture）**：
-   - 首选快捷键：`SUPER + I`（被占用时降级为 `SUPER + ALT + I` → `SUPER + ALT + C`）
+   - 首选快捷键：`F8`（被占用时降级为 `SUPER + ALT + I` → `SUPER + ALT + C`）
    - 触发动作：`{ tui = "horae-flash", focus = true }`
    - 窗口规则：`org.omarchy.horae-flash` 居中浮动（800×600），打完按回车瞬间保存并退出。
 2. **应用一般模式（Normal TUI）**：
@@ -124,7 +124,7 @@ bash <skill-dir>/scripts/setup-omarchy.sh --install-npm --all
 ## 三、操作与验证指引
 
 配置完成后，按以下步骤进行冒烟验证：
-1. **测试闪念录入**：按键盘 `SUPER + I`，观察是否瞬间弹出一个紧凑的 Horae 终端录入框；输入 `体验 Horae 闪念录入 @test` 并回车，窗口应自动关闭；
+1. **测试闪念录入与语音**：按键盘 `F8` 打开紧凑的 Horae 终端录入框，再按 `F8` 启动/结束语音录入；输入 `体验 Horae 闪念录入 @test` 并回车，窗口应自动关闭；
 2. **测试划选/剪贴板录入**：用鼠标划选一段文字（无需手动按 Ctrl+C），按键盘 `CTRL + 1`，观察右上方是否弹出 `Horae 剪贴板捕获` 桌面通知，并检查收件箱；
 3. **测试应用交互**：按键盘 `SUPER + SHIFT + I`，观察是否呼出/聚焦到 Horae 主界面，检查刚才捕获的任务是否已在收件箱；
 4. **测试状态栏**：查看顶部状态栏居中位置，是否有 Horae 番茄钟环和待办提示，鼠标悬停测试隐私模式与卡片展开。
@@ -134,7 +134,7 @@ bash <skill-dir>/scripts/setup-omarchy.sh --install-npm --all
 ## 四、安全红线
 
 1. **配置备份原则**：在修改 `~/.config/hypr/bindings.lua` 前，必须自动创建时间戳备份文件（`bindings.lua.bak.<timestamp>`）；
-2. **键位不覆盖原则**：若用户的按键（如 `SUPER + I`）已分配给其他工作流，不得强行静默覆盖，应先提示用户或改用备用键（如 `SUPER + ALT + C`）；
+2. **键位不覆盖原则**：若用户的按键（如 `F8`）已分配给其他工作流，不得强行静默覆盖，应先提示用户或改用备用键（如 `SUPER + ALT + C`）；
 3. **数据隐私原则**：`~/.config/horae` 目录权限必须设置为 `0700`，数据库与配置文件权限设置为 `0600`；
 4. **无损卸载原则**：卸载插件或配置时，绝不删除用户已积累的 `horae.db` 任务与时间线数据。
 

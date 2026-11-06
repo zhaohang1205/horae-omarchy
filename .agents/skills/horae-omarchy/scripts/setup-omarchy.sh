@@ -323,7 +323,7 @@ setup_hyprland() {
 
         add_binding "$BINDINGS_LUA" "horae-flash" "Flash" "HORAE_FLASH_KEY" \
             '{ tui = "horae-flash", focus = true }' \
-            "SUPER + I" "SUPER + ALT + I" "SUPER + ALT + C"
+            "F8" "SUPER + ALT + I" "SUPER + ALT + C"
 
         add_binding "$BINDINGS_LUA" "horae-normal" "Normal" "HORAE_NORMAL_KEY" \
             '{ tui = "horae-normal", focus = true }' \
