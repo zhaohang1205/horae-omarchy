@@ -79,7 +79,7 @@ is "两个文件各有一份备份" "$(find "$WORK/t1/home/.config/hypr" -maxdep
 
 printf '\n\033[1m[2] 键位冲突规避\033[0m\n'
 is "未占用输入法的 SUPER + I" "$(grep -c 'o.bind("SUPER + I"' "$WORK/t1/home/.config/hypr/bindings.lua")" 0
-is "改用空闲的 F8" "$(grep -c 'F8' "$WORK/t1/home/.config/hypr/bindings.lua")" 1
+is "F8 打开浮窗并在窗内转发语音键" "$(grep -c 'F8' "$WORK/t1/home/.config/hypr/bindings.lua")" 2
 is "旧的 F9 仍留在用户配置里" "$(grep -c 'F9' "$WORK/t1/home/.config/hypr/bindings.lua")" 1
 
 printf '\n\033[1m[3] 注释里的示例不算占用\033[0m\n'

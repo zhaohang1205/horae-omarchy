@@ -286,6 +286,43 @@ setup_hyprland() {
         BACKED_UP_FILES[$target]=1
     }
 
+    # F8 both opens Flash globally and starts/stops Horae's in-app voice input.
+    # Forward F8 only while the Flash window is active, so other apps don't
+    # receive the launcher key and Horae can receive the voice key.
+    ensure_flash_voice_passthrough() {
+        local lua_file="$1"
+        local pass_line='hl.bind("F8", hl.dsp.pass({ window = "class:^org\\.omarchy\\.horae-flash$" }))'
+        local tmp
+
+        grep -qF 'o.bind("F8", "Horae (Flash)"' "$lua_file" || return 0
+        if grep -qF "$pass_line" "$lua_file"; then
+            return 0
+        fi
+
+        ensure_backup "$lua_file"
+        tmp="$(mktemp)"
+        if ! PASS_BINDING_LINE="$pass_line" awk '
+            index($0, "hl.bind(\"F8\", hl.dsp.pass") && index($0, "horae-flash") {
+                print ENVIRON["PASS_BINDING_LINE"]
+                inserted = 1
+                next
+            }
+            index($0, "o.bind(\"F8\", \"Horae (Flash)\"") && !inserted {
+                print ENVIRON["PASS_BINDING_LINE"]
+                inserted = 1
+            }
+            { print }
+            END { if (!inserted) exit 1 }
+        ' "$lua_file" > "$tmp"; then
+            rm -f "$tmp"
+            warn "无法为 Horae Flash 添加 F8 语音按键转发"
+            return 1
+        fi
+        mv "$tmp" "$lua_file"
+        ok "已将 F8 转发到 Horae Flash 窗口，用于语音录入"
+        NEED_RELOAD=true
+    }
+
     # 追加一条快捷键。键位被占用时不再静默覆盖（SKILL.md 安全红线二），
     # 而是按候选顺序换用下一个空闲键；用户显式指定的键冲突则直接跳过。
     add_binding() {
@@ -324,6 +361,7 @@ setup_hyprland() {
         add_binding "$BINDINGS_LUA" "horae-flash" "Flash" "HORAE_FLASH_KEY" \
             '{ tui = "horae-flash", focus = true }' \
             "F8" "SUPER + ALT + I" "SUPER + ALT + C"
+        ensure_flash_voice_passthrough "$BINDINGS_LUA"
 
         add_binding "$BINDINGS_LUA" "horae-normal" "Normal" "HORAE_NORMAL_KEY" \
             '{ tui = "horae-normal", focus = true }' \

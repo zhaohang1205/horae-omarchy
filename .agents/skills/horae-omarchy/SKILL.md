@@ -66,6 +66,7 @@ bash <skill-dir>/scripts/preflight.sh
 
 1. **闪念录入模式（Flash Capture）**：
    - 首选快捷键：`F8`（被占用时降级为 `SUPER + ALT + I` → `SUPER + ALT + C`）
+   - 仅当 Horae 闪念窗口聚焦时才把 F8 继续传入应用，避免影响其他窗口；窗口内再次按 F8 可开始/结束语音录入。
    - 触发动作：`{ tui = "horae-flash", focus = true }`
    - 窗口规则：`org.omarchy.horae-flash` 居中浮动（800×600），打完按回车瞬间保存并退出。
 2. **应用一般模式（Normal TUI）**：
