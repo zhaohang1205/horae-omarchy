@@ -119,7 +119,14 @@ is "窗口规则照常写入" "$(grep -c 'Horae' "$WORK/t6/home/.config/hypr/hyp
 
 printf '\n\033[1m[7] 工具链缺失不中止整个脚本\033[0m\n'
 make_fixture "$WORK/t7"
-run_setup "$WORK/t7" --install-cargo --completions >/dev/null 2>&1
+mkdir -p "$WORK/t7/no-cargo-bin"
+for b in bash sh env mkdir chmod cp rm mv sed grep awk mktemp cat date cut dirname basename head wc cmp find sort tr; do
+    p=$(type -P "$b" 2>/dev/null)
+    [ -n "$p" ] && ln -sf "$p" "$WORK/t7/no-cargo-bin/$b"
+done
+env HOME="$WORK/t7/home" OMARCHY_PATH="$WORK/t7/omarchy" \
+    PATH="$WORK/t7/stub:$WORK/t7/no-cargo-bin" \
+    bash "$SETUP" --install-cargo --completions >/dev/null 2>&1
 is "--install-cargo 在无 cargo 时退出码为 0" "$?" 0
 
 printf '\n\033[1m[8] 补全生成失败不留空文件\033[0m\n'
