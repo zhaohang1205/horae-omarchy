@@ -38,41 +38,78 @@ normalize_key() {
         }'
 }
 
+# 输出 lua 文件内容，但去掉「匹配关键字的完整绑定语句」。
+#
+# 先把一条绑定语句整条缓冲下来（按括号深度判断到哪一行为止），再决定删不删：
+# 逐行匹配会把多行写法只删掉第一行，留下孤立字段，整份配置变成非法 Lua；
+# 而且跨行写法里关键字（比如窗口 class）常常在第二行，逐行匹配也认不出来。
+# 语句到文件末尾仍未配平则返回非零，调用方必须当作"没能安全处理"。
+filter_bind_statements() {
+    local lua_file="$1" pattern="$2"
+
+    STMT_PATTERN="$pattern" awk '
+        function depth(s,   d, i, ch) {
+            d = 0
+            for (i = 1; i <= length(s); i++) {
+                ch = substr(s, i, 1)
+                if (ch == "(" || ch == "{" || ch == "[") d++
+                else if (ch == ")" || ch == "}" || ch == "]") d--
+            }
+            return d
+        }
+        function flush(   text) {
+            text = buf
+            buf = ""
+            if (text !~ ENVIRON["STMT_PATTERN"]) print text
+        }
+        BEGIN { d = 0; in_stmt = 0; buf = "" }
+        {
+            if (d > 0) {
+                buf = buf "\n" $0
+                d += depth($0)
+                if (d < 0) d = 0
+                if (d == 0) { in_stmt = 0; flush() }
+                next
+            }
+            # 注释行原样保留，不参与语句配对
+            if ($0 ~ /^[[:space:]]*--/) { print; next }
+            if ($0 ~ /(^|[^[:alnum:]_])(o\.(re)?bind(_toggle|_hold)?|hl\.bind)[[:space:]]*\(/) {
+                buf = $0
+                d = depth($0)
+                if (d < 0) d = 0
+                if (d == 0) { flush() } else { in_stmt = 1 }
+                next
+            }
+            print
+        }
+        END { if (in_stmt || d > 0) exit 3 }
+    ' "$lua_file"
+}
+
 # 汇总当前系统所有按键绑定：运行时绑定表（需 Hyprland 会话）+ 用户配置 + Omarchy 默认配置。
 # 注释行会被剥离，避免把文档里的示例当成真实绑定。
 #
-# $1 是"我们自己即将原地重写的键"（闪念绑定当前占用的键）。运行时绑定表是当前
-# 配置的快照，里面也有我们那条旧绑定，不排除掉会把自己当成占用者。
+# 我们自己写的那条闪念绑定不算"被别人占用"（重写时原地替换），但同一按键上
+# 别人的绑定必须留着，否则会漏掉真实冲突。运行时绑定表里我们自己的记录有两种
+# 形态：新写法的描述是 "Horae (Flash)"；旧版 hl.bind 透传没有描述，菜单会把它
+# 显示成 "HL.Dispatcher(pass),N"。
 build_binding_index() {
-    local own_key="${1:-}"
     local omarchy_path="${OMARCHY_PATH:-/usr/share/omarchy}"
     local dir file key
 
     if command -v omarchy >/dev/null 2>&1 && command -v hyprctl >/dev/null 2>&1; then
         omarchy menu keybindings --print 2>/dev/null \
             | sed -nE 's/^(.+[^ ]) +→ +(.+)$/\1\t\2/p' \
-            | grep -v 'Horae (Flash)' \
+            | grep -vE 'Horae \(Flash\)|HL\.Dispatcher\(pass\)' \
             | while IFS=$'\t' read -r key _; do
-                [ -n "$key" ] || continue
-                if [ -n "$own_key" ] && [ "$(normalize_key "$key")" = "$(normalize_key "$own_key")" ]; then
-                    continue
-                fi
-                printf '%s\t%s\n' "$(normalize_key "$key")" "$key (运行时)"
-              done
+                [ -n "$key" ] && printf '%s\t%s\n' "$(normalize_key "$key")" "$key (运行时)"
+              done || true
     fi
 
     for dir in "$HOME/.config/hypr" "$omarchy_path/default/hypr"; do
         [ -d "$dir" ] || continue
         while IFS= read -r file; do
-            awk '
-                # 注释行不是绑定
-                /^[[:space:]]*--/ { next }
-                # 自己写的闪念绑定不算"被别人占用"：重写时是原地替换
-                /Horae \(Flash\)/ { next }
-                # 旧版的透传绑定（有缺陷，会被清掉）
-                /hl\.dsp\.pass.*horae-flash/ { next }
-                { print }
-            ' "$file" 2>/dev/null \
+            filter_bind_statements "$file" 'Horae \(Flash\)|hl\.dsp\.pass.*horae-flash' 2>/dev/null \
                 | sed -E 's/--.*$//' \
                 | grep -hoE '(o\.(re)?bind(_toggle|_hold)?|hl\.bind)\([[:space:]]*"[^"]+"' 2>/dev/null \
                 | sed -E 's/^[a-z_.]+\([[:space:]]*"//; s/"$//' \
@@ -280,16 +317,9 @@ setup_hyprland() {
         return 0
     fi
 
-    # 闪念绑定待会儿会被原地重写，它现在占着的键不算"被别人占用"。
-    local flash_owned_key=""
-    if [ -f "$BINDINGS_LUA" ]; then
-        flash_owned_key="$(grep -oE 'o\.bind\("[^"]+", "Horae \(Flash\)"' "$BINDINGS_LUA" 2>/dev/null \
-            | head -1 | sed -E 's/^o\.bind\("([^"]+)".*/\1/')" || true
-    fi
-
-    # 建立全系统按键索引（含 Omarchy 默认绑定），用于冲突检测
+        # 建立全系统按键索引（含 Omarchy 默认绑定），用于冲突检测
     log "正在扫描现有按键绑定，检查冲突..."
-    build_binding_index "$flash_owned_key" > "$BINDING_INDEX" 2>/dev/null || true
+    build_binding_index > "$BINDING_INDEX" 2>/dev/null || true
 
     # 索引空说明既没读到运行时绑定表，也没读到任何 lua 配置。
     # 这种情况下"检测不到冲突"并不等于"没有冲突"，继续绑定就有抢占风险，
@@ -328,93 +358,168 @@ setup_hyprland() {
     FLASH_BLOCK_START='-- >>> Horae Flash binding >>>'
     FLASH_BLOCK_END='-- <<< Horae Flash binding <<<'
 
+    # 就地改写内容，而不是 mktemp 之后 mv 覆盖：bindings.lua 可能是软链接
+    # （stow / chezmoi 之类管理 dotfiles），mv 会把链接换成普通文件，之后对
+    # 真实文件的修改就不再生效。
+    replace_file_content() {
+        local target="$1" tmp="$2"
+        cat "$tmp" > "$target" && rm -f "$tmp"
+    }
+
+    # 把某个键写入索引，避免同一次运行里后一个动作又选中同一个键。
+    reserve_key_in_index() {
+        local key="$1"
+        [ -n "$key" ] || return 0
+        printf '%s\t%s\n' "$(normalize_key "$key")" "$key (本次新增)" >> "$BINDING_INDEX"
+    }
+
+    # 从 lua 文件里删除「匹配某关键字的完整语句」。
+    # 具体缓冲/配对逻辑见 filter_bind_statements；内容没变就不动文件
+    # （避免每次重跑都改文件、多留一份备份）。
+    strip_lua_statements() {
+        local lua_file="$1" pattern="$2" tmp
+
+        tmp="$(mktemp)"
+        if ! filter_bind_statements "$lua_file" "$pattern" > "$tmp"; then
+            rm -f "$tmp"
+            return 1
+        fi
+        if cmp -s "$tmp" "$lua_file"; then
+            rm -f "$tmp"
+            return 2
+        fi
+        ensure_backup "$lua_file"
+        replace_file_content "$lua_file" "$tmp"
+        return 0
+    }
+
     # 删掉旧版留下的透传绑定：它不看焦点，会误触发录音。
     strip_legacy_flash() {
-        local lua_file="$1" tmp
+        local lua_file="$1" rc
 
-        grep -q 'hl\.dsp\.pass.*horae-flash' "$lua_file" || return 1
+        # 只匹配真实的调用，不匹配注释里提到的 "hl.dsp.pass："
+        grep -q 'hl\.dsp\.pass(' "$lua_file" || return 0
 
-        ensure_backup "$lua_file"
-        tmp="$(mktemp)"
-        sed -E '/hl\.dsp\.pass.*horae-flash/d' "$lua_file" > "$tmp"
-        mv "$tmp" "$lua_file"
-        ok "已移除旧的 F8 透传绑定（hl.dsp.pass 不看焦点，会误触发录音）"
-        NEED_RELOAD=true
-        return 0
+        rc=0
+        strip_lua_statements "$lua_file" 'hl\.dsp\.pass.*horae-flash' || rc=$?
+        case "$rc" in
+            0)
+                ok "已移除旧的 F8 透传绑定（hl.dsp.pass 不看焦点，会误触发录音）"
+                NEED_RELOAD=true
+                return 0
+                ;;
+            2)
+                return 0
+                ;;
+            *)
+                warn "旧的 F8 透传绑定是多行写法且括号未配平，为免配置失效本次未改动"
+                return 1
+                ;;
+        esac
     }
 
     # 删掉整个旧版闪念绑定（连同新版的块标记），供重写使用。
     strip_flash_block() {
-        local lua_file="$1" tmp
+        local lua_file="$1" mid rc
 
-        grep -qF 'Horae Flash binding' "$lua_file" || grep -qF 'Horae (Flash)' "$lua_file" || return 1
+        grep -qF 'Horae Flash binding' "$lua_file" || grep -qF 'Horae (Flash)' "$lua_file" || return 0
 
-        ensure_backup "$lua_file"
-        tmp="$(mktemp)"
+        # 1) 去掉带标记的整块
+        mid="$(mktemp)"
         awk -v start="$FLASH_BLOCK_START" -v end="$FLASH_BLOCK_END" '
             index($0, start) { skip = 1; next }
             index($0, end)   { skip = 0; next }
             skip { next }
-            /Horae \(Flash\)/ { next }
             { print }
-        ' "$lua_file" > "$tmp"
-        mv "$tmp" "$lua_file"
+        ' "$lua_file" > "$mid"
+
+        # 2) 再去掉旧版单条绑定（跨行的也整条删掉；配不平就放弃，保持原样）
+        rc=0
+        strip_lua_statements "$mid" 'Horae \(Flash\)' || rc=$?
+        if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+            rm -f "$mid"
+            warn "旧的 Flash 绑定是多行写法且括号未配平，为免配置失效本次未改动"
+            return 1
+        fi
+
+        if cmp -s "$mid" "$lua_file"; then
+            rm -f "$mid"
+            return 0
+        fi
+        ensure_backup "$lua_file"
+        replace_file_content "$lua_file" "$mid"
         NEED_RELOAD=true
         return 0
     }
 
     setup_flash_binding() {
         local lua_file="$1"
-        local key=""
+        local key="" bound_key=""
 
-        # 新版写法已经在位：只清掉可能残留的旧透传绑定，不重复注入。
-        if grep -qF 'horae_flash_bind' "$lua_file"; then
-            strip_legacy_flash "$lua_file" || true
-            local bound_key
-            bound_key="$(grep -oE 'o\.bind\("[^"]+", "Horae \(Flash\)"' "$lua_file" 2>/dev/null \
-                | head -1 | sed -E 's/^o\.bind\("([^"]+)".*/\1/')" || true
-            [ -n "$bound_key" ] && printf -v 'HORAE_FLASH_KEY_USED' '%s' "$bound_key"
-            ok "闪念录入快捷键已是新版绑定，跳过重复写入"
-            return 0
-        fi
+        bound_key="$(grep -oE 'o\.bind\("[^"]+", "Horae \(Flash\)"' "$lua_file" 2>/dev/null \
+            | head -1 | sed -E 's/^o\.bind\("([^"]+)".*/\1/')" || true
 
-        # 旧版本写过绑定就沿用它原来的键（除非这个键现在被别人占了），
-        # 但用户显式指定 HORAE_FLASH_KEY 时以用户为准。
-        if [ -z "${HORAE_FLASH_KEY:-}" ]; then
-            local legacy_key
-            legacy_key="$(grep -oE 'o\.bind\("[^"]+", "Horae \(Flash\)"' "$lua_file" 2>/dev/null \
-                | head -1 | sed -E 's/^o\.bind\("([^"]+)".*/\1/')" || true
-            if [ -n "$legacy_key" ] && ! key_owner "$legacy_key" >/dev/null 2>&1; then
-                key="$legacy_key"
+        # 已经是新版写法：除非用户显式要求换键，否则原地保留。
+        # 注意：旧版的表格式绑定同样能被 bound_key 提取到，所以必须同时确认
+        # 文件里确实有新版函数名，否则会把旧绑定当成"已配置"直接跳过。
+        if [ -n "$bound_key" ] && grep -qF 'horae_flash_bind' "$lua_file"; then
+            local want="${HORAE_FLASH_KEY:-}"
+            if [ -z "$want" ] || [ "$(normalize_key "$want")" = "$(normalize_key "$bound_key")" ]; then
+                strip_legacy_flash "$lua_file" || true
+                # 保留的键也要占位，否则后面的 Clip 候选会挑到同一个键
+                reserve_key_in_index "$bound_key"
+                printf -v 'HORAE_FLASH_KEY_USED' '%s' "$bound_key"
+                ok "闪念录入快捷键已是新版绑定（$bound_key），跳过重复写入"
+                return 0
             fi
+            log "检测到 HORAE_FLASH_KEY=$want，准备把闪念录入从 $bound_key 改绑"
         fi
 
-        if [ -z "$key" ]; then
+        if [ -n "${HORAE_FLASH_KEY:-}" ]; then
+            # 显式指定：冲突时报错并保留现状，不强行占用
             if ! key="$(pick_free_key "Flash" "HORAE_FLASH_KEY" "F8" "SUPER + ALT + I" "SUPER + ALT + C")"; then
-                warn "Flash 快捷键未配置（键位冲突），跳过"
+                strip_legacy_flash "$lua_file" || true
+                reserve_key_in_index "$bound_key"
+                warn "Flash 快捷键未改动（指定的键位已被占用）"
                 SKIPPED+=("Flash 快捷键")
                 return 0
             fi
+        elif [ -n "$bound_key" ] && ! key_owner "$bound_key" >/dev/null 2>&1; then
+            # 旧版本写过绑定就沿用原来的键（除非这个键现在被别人占了）
+            key="$bound_key"
+        elif ! key="$(pick_free_key "Flash" "HORAE_FLASH_KEY" "F8" "SUPER + ALT + I" "SUPER + ALT + C")"; then
+            # 候选键全被占：旧版那条不看焦点的透传绑定必须清掉，否则后台闪念窗
+            # 仍会被误触发录音；开窗绑定本身保留，不影响唤起浮窗。
+            strip_legacy_flash "$lua_file" || true
+            reserve_key_in_index "$bound_key"
+            warn "Flash 快捷键未配置（键位冲突），跳过"
+            SKIPPED+=("Flash 快捷键")
+            return 0
         fi
 
         # 旧绑定先清掉，避免同一个按键上留两条绑定。
-        strip_legacy_flash "$lua_file" || true
-        strip_flash_block "$lua_file" || true
+        if ! strip_legacy_flash "$lua_file" || ! strip_flash_block "$lua_file"; then
+            warn "旧的 Flash 绑定无法安全移除，本次不重写闪念绑定"
+            SKIPPED+=("Flash 快捷键")
+            return 0
+        fi
 
         ensure_backup "$lua_file"
         {
             printf '\n%s\n' "$FLASH_BLOCK_START"
-            if [ "$key" = "F8" ]; then
+            if [ "$(normalize_key "$key")" = "$(normalize_key "F8")" ]; then
                 cat << 'EOF'
--- 闪念录入：打开浮窗；闪念窗在前台时再按一次，触发 horae 内置语音录入。
--- 只有一条绑定，按当前焦点窗口分流：焦点在闪念窗就把 F8 送回闪念窗自己，
--- 否则开窗。不用 hl.dsp.pass：它只按 class 匹配、不看焦点，后台闪念窗也会
--- 被触发录音（上游 discussion #14417 亦有记录）。
+-- 闪念录入：打开浮窗；焦点在 horae 的 TUI 上时再按一次，触发内置语音录入。
+-- 只有一条绑定，按当前焦点窗口分流：焦点在闪念窗或一般 TUI 上就把 F8 送回
+-- 该窗口自己，否则开窗。不用 hl.dsp.pass：它只按 class 匹配、不看焦点，
+-- 后台闪念窗也会被触发录音（上游 discussion #14417 亦有记录）。
 local horae_flash_bind = function()
   local window = hl.get_active_window()
   local class = ((window and window.class) or ""):lower()
 
-  if class:find("horae%-flash") then
+  -- 闪念窗是 org.omarchy.horae-flash，一般 TUI 是 org.omarchy.horae[-normal]，
+  -- 两者都把 F8 当语音键。
+  if class:find("^org%.omarchy%.horae") then
     hl.dispatch(hl.dsp.send_key_state({ mods = "", key = "F8", state = "down" }))
     hl.timer(function()
       hl.dispatch(hl.dsp.send_key_state({ mods = "", key = "F8", state = "up" }))
@@ -426,8 +531,8 @@ end
 EOF
             else
                 cat << 'EOF'
--- 闪念录入：打开浮窗。这一档不是 F8，合成器不会拦它，闪念窗内按 F8
--- 仍能直接触发 horae 的语音录入，因此不需要转发。
+-- 闪念录入：打开浮窗。这一档不是 F8，合成器不会拦它；闪念窗内用 Alt+V
+-- （或不冲突时用 F8）仍能触发 horae 的语音录入，因此不需要转发。
 local horae_flash_bind = function()
   hl.dispatch(hl.dsp.exec_cmd("omarchy-launch-or-focus-tui horae-flash"))
 end
@@ -440,7 +545,7 @@ EOF
         } >> "$lua_file"
 
         # 把刚占用的键写回索引，避免同一次运行里后一个动作又选中同一个键
-        printf '%s\t%s\n' "$(normalize_key "$key")" "$key (本次新增)" >> "$BINDING_INDEX"
+        reserve_key_in_index "$key"
 
         printf -v 'HORAE_FLASH_KEY_USED' '%s' "$key"
         ok "闪念录入快捷键已绑定到 $key"
@@ -472,7 +577,7 @@ EOF
         } >> "$lua_file"
 
         # 把刚占用的键写回索引，避免同一次运行里后一个动作又选中同一个键
-        printf '%s\t%s\n' "$(normalize_key "$key")" "$key (本次新增)" >> "$BINDING_INDEX"
+        reserve_key_in_index "$key"
 
         ok "${label}快捷键已绑定到 $key"
         printf -v "${env_name}_USED" '%s' "$key"

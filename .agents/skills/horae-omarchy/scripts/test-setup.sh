@@ -205,6 +205,92 @@ T13="$WORK/t13/home/.config/hypr/bindings.lua"
 is "索引为空时旧透传绑定仍被清掉" "$(grep -c 'hl\.dsp\.pass(' "$T13")" 0
 is "索引为空时不新增绑定" "$(grep -c 'horae_flash_bind' "$T13")" 0
 
+printf '\n\033[1m[14] bindings.lua 是软链接时不被替换成普通文件\033[0m\n'
+make_fixture "$WORK/t14"
+mkdir -p "$WORK/t14/dotfiles"
+mv "$WORK/t14/home/.config/hypr/bindings.lua" "$WORK/t14/dotfiles/bindings.lua"
+ln -s "$WORK/t14/dotfiles/bindings.lua" "$WORK/t14/home/.config/hypr/bindings.lua"
+cat >>"$WORK/t14/dotfiles/bindings.lua" << 'EOF'
+hl.bind("F8", hl.dsp.pass({ window = "class:^org\\.omarchy\\.horae-flash$" }))
+o.bind("F8", "Horae (Flash)", { tui = "horae-flash", focus = true })
+EOF
+run_setup "$WORK/t14" --shortcuts >/dev/null 2>&1
+if [ -L "$WORK/t14/home/.config/hypr/bindings.lua" ]; then pass "仍然是软链接"; else fail "仍然是软链接" "被换成了普通文件" "软链接"; fi
+is "改动写进了链接目标" "$(grep -c 'horae_flash_bind' "$WORK/t14/dotfiles/bindings.lua")" "$(grep -c 'horae_flash_bind' "$WORK/t14/dotfiles/bindings.lua")"
+is "链接目标里的旧透传已清掉" "$(grep -c 'hl\.dsp\.pass(' "$WORK/t14/dotfiles/bindings.lua")" 0
+
+printf '\n\033[1m[15] 多行写法的旧绑定整条删除，不留下半截字段\033[0m\n'
+make_fixture "$WORK/t15"
+cat >>"$WORK/t15/home/.config/hypr/bindings.lua" << 'EOF'
+hl.bind("F8", hl.dsp.pass({
+  window = "class:^org\\.omarchy\\.horae-flash$"
+}))
+o.bind("F8", "Horae (Flash)", {
+  tui = "horae-flash",
+  focus = true,
+})
+EOF
+run_setup "$WORK/t15" --shortcuts >/dev/null 2>&1
+T15="$WORK/t15/home/.config/hypr/bindings.lua"
+is "跨行的透传绑定整条删掉" "$(grep -c 'hl\.dsp\.pass(' "$T15")" 0
+is "没有遗留 window 字段" "$(grep -c 'window = "class:' "$T15")" 0
+is "没有遗留 tui 字段" "$(grep -c 'tui = "horae-flash"' "$T15")" 0
+is "换成新版绑定" "$(grep -c 'o\.bind("F8", "Horae (Flash)", horae_flash_bind)' "$T15")" 1
+
+printf '\n\033[1m[16] 重跑时显式 HORAE_FLASH_KEY 会生效\033[0m\n'
+make_fixture "$WORK/t16"
+run_setup "$WORK/t16" --shortcuts >/dev/null 2>&1
+# shellcheck disable=SC2046
+env $(env_for "$WORK/t16") HORAE_FLASH_KEY="SUPER + ALT + I" bash "$SETUP" --shortcuts >/dev/null 2>&1
+T16="$WORK/t16/home/.config/hypr/bindings.lua"
+is "改绑到显式指定的键" "$(grep -c 'o\.bind("SUPER + ALT + I", "Horae (Flash)"' "$T16")" 1
+is "旧的 F8 绑定已移除" "$(grep -c 'o\.bind("F8", "Horae (Flash)"' "$T16")" 0
+
+printf '\n\033[1m[17] 保留的 Flash 键会占位，Clip 不会撞上\033[0m\n'
+make_fixture "$WORK/t17"
+cat >>"$WORK/t17/home/.config/hypr/bindings.lua" << 'EOF'
+o.bind("CTRL + 1", "Terminal", "foot")
+o.bind("SUPER + ALT + C", "Horae (Flash)", horae_flash_bind)
+EOF
+run_setup "$WORK/t17" --shortcuts >/dev/null 2>&1
+T17="$WORK/t17/home/.config/hypr/bindings.lua"
+is "Clip 没有占用 Flash 的键" "$(grep -c 'o\.bind("SUPER + ALT + C", "Horae (Clip)"' "$T17")" 0
+is "Clip 改用下一个候选" "$(grep -c 'o\.bind("SUPER + ALT + SHIFT + C", "Horae (Clip)"' "$T17")" 1
+
+printf '\n\033[1m[18] 候选键全冲突时仍清掉旧透传绑定\033[0m\n'
+make_fixture "$WORK/t18"
+cat >>"$WORK/t18/home/.config/hypr/bindings.lua" << 'EOF'
+o.bind("F8", "Something else", "true")
+o.bind("SUPER + ALT + I", "Another thing", "true")
+o.bind("SUPER + ALT + C", "Yet another", "true")
+hl.bind("F8", hl.dsp.pass({ window = "class:^org\\.omarchy\\.horae-flash$" }))
+o.bind("F8", "Horae (Flash)", { tui = "horae-flash", focus = true })
+EOF
+run_setup "$WORK/t18" --shortcuts >/dev/null 2>&1
+T18="$WORK/t18/home/.config/hypr/bindings.lua"
+is "旧透传绑定被清掉" "$(grep -c 'hl\.dsp\.pass(' "$T18")" 0
+is "旧的开窗绑定保留（浮窗仍能唤起）" "$(grep -c 'Horae (Flash)", {' "$T18")" 1
+is "没有新增新版绑定" "$(grep -c 'horae_flash_bind' "$T18")" 0
+
+printf '\n\033[1m[19] preflight 不把 Flash 当成 Normal 已配置\033[0m\n'
+make_fixture "$WORK/t19"
+cat >>"$WORK/t19/home/.config/hypr/bindings.lua" << 'EOF'
+o.bind("F8", "Horae (Flash)", horae_flash_bind)
+EOF
+# shellcheck disable=SC2046
+pf19=$(env $(env_for "$WORK/t19") bash "$PREFLIGHT" 2>&1)
+case "$pf19" in
+*"未配置快捷键: 应用一般模式"*) pass "Normal 未被误判为已配置" ;;
+*) fail "Normal 未被误判为已配置" "被误判" "含「未配置快捷键: 应用一般模式」" ;;
+esac
+
+printf '\n\033[1m[20] 小写 f8 也走转发分支\033[0m\n'
+make_fixture "$WORK/t20"
+# shellcheck disable=SC2046
+env $(env_for "$WORK/t20") HORAE_FLASH_KEY="f8" bash "$SETUP" --shortcuts >/dev/null 2>&1
+T20="$WORK/t20/home/.config/hypr/bindings.lua"
+is "小写 f8 仍生成转发逻辑" "$(grep -c 'send_key_state' "$T20")" 2
+
 printf '\n\033[1m========================================\033[0m\n'
 if [ "$FAIL" -eq 0 ]; then
     printf '\033[0;32m全部通过：%d 项\033[0m\n' "$PASS"
