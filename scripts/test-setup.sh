@@ -79,8 +79,16 @@ is "两个文件各有一份备份" "$(find "$WORK/t1/home/.config/hypr" -maxdep
 
 printf '\n\033[1m[2] 键位冲突规避\033[0m\n'
 is "未占用输入法的 SUPER + I" "$(grep -c 'o.bind("SUPER + I"' "$WORK/t1/home/.config/hypr/bindings.lua")" 0
-is "改用空闲的 F8" "$(grep -c 'F8' "$WORK/t1/home/.config/hypr/bindings.lua")" 1
+is "闪念绑定落在 F8" "$(grep -c 'o.bind("F8", "Horae (Flash)"' "$WORK/t1/home/.config/hypr/bindings.lua")" 1
 is "旧的 F9 仍留在用户配置里" "$(grep -c 'F9' "$WORK/t1/home/.config/hypr/bindings.lua")" 1
+
+printf '\n\033[1m[2b] 闪念绑定只用一条，按焦点分流\033[0m\n'
+B="$WORK/t1/home/.config/hypr/bindings.lua"
+is "只写了一条 F8 绑定" "$(grep -c 'o\.bind("F8"' "$B")" 1
+is "不再使用有缺陷的 hl.dsp.pass" "$(grep -c 'hl\.dsp\.pass(' "$B")" 0
+is "用官方 send_key_state 把按键送回闪念窗" "$(grep -c 'send_key_state' "$B")" 2
+is "转发前先判断焦点窗口" "$(grep -c 'get_active_window' "$B")" 1
+is "键位菜单能还原成可执行命令" "$(grep -c 'o\.bind_commands\[horae_flash_bind\]' "$B")" 1
 
 printf '\n\033[1m[3] 注释里的示例不算占用\033[0m\n'
 make_fixture "$WORK/t3"
@@ -171,6 +179,31 @@ case "$pf_out" in
 *"[7/7] 语音录入链路"*) pass "输出包含语音链路检查" ;;
 *) fail "输出包含语音链路检查" "缺失" "含 [7/7]" ;;
 esac
+
+printf '\n\033[1m[12] 旧版透传绑定会被迁移掉\033[0m\n'
+make_fixture "$WORK/t12"
+cat >>"$WORK/t12/home/.config/hypr/bindings.lua" << 'EOF'
+hl.bind("F8", hl.dsp.pass({ window = "class:^org\\.omarchy\\.horae-flash$" }))
+o.bind("F8", "Horae (Flash)", { tui = "horae-flash", focus = true })
+EOF
+run_setup "$WORK/t12" --shortcuts >/dev/null 2>&1
+T12="$WORK/t12/home/.config/hypr/bindings.lua"
+is "旧的透传绑定被清掉" "$(grep -c 'hl\.dsp\.pass(' "$T12")" 0
+is "旧的表格式绑定被替换" "$(grep -c 'Horae (Flash)", {' "$T12")" 0
+is "换成新版单条绑定" "$(grep -c 'o\.bind("F8", "Horae (Flash)", horae_flash_bind)' "$T12")" 1
+is "沿用原来的键位" "$(grep -c 'o\.bind("F8"' "$T12")" 1
+
+printf '\n\033[1m[13] 冲突检测不可用时也清掉旧透传绑定\033[0m\n'
+make_fixture "$WORK/t13" no
+rm -rf "$WORK/t13/omarchy"
+cat >>"$WORK/t13/home/.config/hypr/bindings.lua" << 'EOF'
+hl.bind("F8", hl.dsp.pass({ window = "class:^org\\.omarchy\\.horae-flash$" }))
+o.bind("F8", "Horae (Flash)", { tui = "horae-flash", focus = true })
+EOF
+run_setup "$WORK/t13" --shortcuts >/dev/null 2>&1
+T13="$WORK/t13/home/.config/hypr/bindings.lua"
+is "索引为空时旧透传绑定仍被清掉" "$(grep -c 'hl\.dsp\.pass(' "$T13")" 0
+is "索引为空时不新增绑定" "$(grep -c 'horae_flash_bind' "$T13")" 0
 
 printf '\n\033[1m========================================\033[0m\n'
 if [ "$FAIL" -eq 0 ]; then
