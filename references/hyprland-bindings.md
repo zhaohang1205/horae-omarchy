@@ -8,12 +8,17 @@ Horae 与 Omarchy 系统结合时，推荐配置三组核心交互方式：
 
 | 快捷键 | 动作 | 原理与调用目标 | 体验特色 |
 |---|---|---|---|
-| `SUPER + I` | 闪念录入模式 (Flash) | `{ tui = "horae-flash", focus = true }` | 居中浮动小窗，快速输入标题/标签/周期，回车后瞬间保存入库并秒级关闭，零上下文干扰 |
+| `F8` | 闪念录入模式 (Flash) | `horae_flash_bind`（按焦点窗口分流） | 居中浮动小窗，快速输入标题/标签/周期，回车后瞬间保存入库并秒级关闭；闪念窗在前台时再按 `F8` 可开始/结束语音录入 |
 | `SUPER + SHIFT + I` | 应用一般模式 (Normal) | `{ tui = "horae-normal", focus = true }` | 呼出或聚焦（已打开时自动切到前台）完整的 GTD 交互视图 |
 | `CTRL + 1` | 剪贴板快速捕获 (Clip) | `~/.local/bin/horae-clip` | 自动复制鼠标划选内容（或剪贴板文本）至收件箱，并弹出 `notify-send` 确认提示 |
-| `Alt + V` / `F8` | horae 内置语音录入 | 在 horae 输入框内 | horae 自带：`pw-record` 录音 → `voxtype transcribe` 转写 → 文本直接落进输入框。**不需要额外脚本** |
+| `Alt + V` / `F8`（窗口内） | horae 内置语音录入 | horae 输入框获得焦点时 | 闪念窗用 `F8` 打开后，再按 `F8` 开始/结束语音录入；Horae 自带转写，无需额外脚本 |
 
-> 上表为首选键位。在原生 Omarchy 上 `SUPER + I` 与 `SUPER + SHIFT + I` 默认被输入法切换占用，实际落地键位以脚本运行结束时的报告为准（见下方「快捷键冲突排查」）。
+> 上表为首选键位。闪念录入默认使用 `F8`；若与用户自定义绑定冲突，脚本会依次尝试 `SUPER + ALT + I`、`SUPER + ALT + C`。脚本把闪念录入写成**一条**绑定，按当前焦点窗口分流：焦点在闪念窗（或一般 TUI）就把 `F8` 送回该窗口自己，触发 horae 的语音录入，否则只开窗。因此在其它应用里按 `F8` 只会打开浮窗，不会误触发录音。
+>
+> ⚠️ **降级到备用键时**：`F8` 此时仍被别人的绑定占着，按 `F8` 触发的是那个动作，不是录音。所以语音录入请用 horae 自己的 `Alt+V`（窗口内、不经过合成器），或者先在那个占用的应用里把 `F8` 让出来再重跑脚本。一般模式的 `SUPER + SHIFT + I` 在原生 Omarchy 上默认被输入法切换占用，实际落地键位以脚本运行结束时的报告为准。
+
+> [!NOTE]
+> 早期版本用 `hl.dsp.pass` 转发 `F8`，有两个硬伤：它只按 class 匹配窗口、**不看焦点**，后台闪念窗也会被触发录音（上游 [discussion #14417](https://github.com/hyprwm/Hyprland/discussions/14417) 也记录了 `pass` 的按键抬起丢失、录音被卡住的问题）；而且 Hyprland 对同一按键的多条绑定不保证 fallthrough，`pass` 失败时可能吞掉按键，浮窗就唤不起来。现版本改用官方 `hl.dsp.send_key_state`（Omarchy 自己的剪贴板快捷键 `SUPER + A/C/V` 也是这个套路），只写一条绑定，不再有这两类问题。
 
 ## 2. bindings.lua 配置示例
 
@@ -25,7 +30,27 @@ Horae 与 Omarchy 系统结合时，推荐配置三组核心交互方式：
 -- ============================================================================
 
 -- 闪念录入模式：按下立即弹出小型录入框
-o.bind("SUPER + I", "Horae (Flash)", { tui = "horae-flash", focus = true })
+-- 只有一条绑定，按当前焦点窗口分流：焦点在闪念窗就把 F8 送回闪念窗自己
+-- （触发 horae 内置语音录入），否则开窗。
+-- 不用 hl.dsp.pass：它只按 class 匹配窗口、不看焦点，后台闪念窗也会被
+-- 触发录音。send_key_state 与 Omarchy 自己的剪贴板快捷键是同一套写法。
+local horae_flash_bind = function()
+  local window = hl.get_active_window()
+  local class = ((window and window.class) or ""):lower()
+
+  if class:find("horae%-flash") then
+    hl.dispatch(hl.dsp.send_key_state({ mods = "", key = "F8", state = "down" }))
+    hl.timer(function()
+      hl.dispatch(hl.dsp.send_key_state({ mods = "", key = "F8", state = "up" }))
+    end, { timeout = 50, type = "oneshot" })
+  else
+    hl.dispatch(hl.dsp.exec_cmd("omarchy-launch-or-focus-tui horae-flash"))
+  end
+end
+
+-- 键位菜单靠这张表把函数绑定还原成可执行命令
+o.bind_commands[horae_flash_bind] = "omarchy-launch-or-focus-tui horae-flash"
+o.bind("F8", "Horae (Flash)", horae_flash_bind)
 
 -- 一般模式：按下平滑呼出或聚焦完整交互视图
 o.bind("SUPER + SHIFT + I", "Horae (Normal)", { tui = "horae-normal", focus = true })
@@ -38,7 +63,7 @@ o.bind("CTRL + 1", "Horae clip capture", os.getenv("HOME") .. "/.local/bin/horae
 
 在添加快捷键前，可运行以下命令检查是否有按键冲突：
 ```bash
-omarchy menu keybindings --print | grep "SUPER + I"
+omarchy menu keybindings --print | grep "F8"
 ```
 
 > [!IMPORTANT]
@@ -52,13 +77,13 @@ omarchy menu keybindings --print | grep "SUPER + I"
 
 | 动作 | 候选链 |
 |---|---|
-| Flash | `SUPER + I` → `SUPER + ALT + I` → `SUPER + ALT + C` |
+| Flash | `F8` → `SUPER + ALT + I` → `SUPER + ALT + C` |
 | Normal | `SUPER + SHIFT + I` → `SUPER + ALT + SHIFT + I` → `SUPER + ALT + N` |
 | Clip | `CTRL + 1` → `SUPER + ALT + C` → `SUPER + ALT + SHIFT + C` |
 
 想固定某个键位，用环境变量覆盖（冲突时脚本会报错并跳过，不会强行占用）：
 ```bash
-HORAE_FLASH_KEY="SUPER + ALT + I" ./scripts/setup-omarchy.sh --shortcuts
+HORAE_FLASH_KEY="F8" ./scripts/setup-omarchy.sh --shortcuts
 ```
 
 ## 3. hyprland.lua 浮动与尺寸规则
@@ -110,7 +135,9 @@ F9（按住说话）→ voxtype 转写 → 写入剪贴板并向焦点窗口发�
 
 **路径二（horae 内置）**
 
-在 horae 的输入框里按 `Alt+V`（或 `F8`）开始录音，再按一次结束。horae 自己调 `pw-record` 录音、调 `voxtype transcribe` 转写，文本直接进输入框。这条路不经过剪贴板，因此不受粘贴键设置影响，但仍受麦克风静音影响。
+在 horae 的输入框里按 `Alt+V` 或 `F8` 开始录音，再按一次结束。闪念浮窗的全局触发键默认也改为 `F8`：第一次按下打开浮窗；焦点在闪念窗或一般 TUI 上时，绑定才把 `F8` 送回该窗口自己（`hl.dsp.send_key_state`），所以第二次按下开始录音，第三次结束。在别的应用里按 `F8` 只会开窗，不会误触发录音。horae 自己调 `pw-record` 录音、调 `voxtype transcribe` 转写，文本直接进输入框。这条路不经过剪贴板，因此不受粘贴键设置影响，但仍受麦克风静音影响。
+
+> 若闪念录入降级到了备用键（`F8` 已被别的应用占用），窗口内按 `F8` 会触发那个应用的动作而不是录音 —— 请改用 `Alt+V`。
 
 ### voxtype 的两条触发路径只能留一条
 

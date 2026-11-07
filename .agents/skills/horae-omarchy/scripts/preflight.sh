@@ -103,10 +103,12 @@ if [ -f "$BINDINGS_LUA" ]; then
     if grep -q "horae-flash" "$BINDINGS_LUA" || grep -q "horae.*-f" "$BINDINGS_LUA"; then
         ok "已配置快捷键: 闪念录入模式 (Flash capture)"
     else
-        warn "未配置快捷键: 闪念录入模式 (推荐绑定至 SUPER + I)"
+        warn "未配置快捷键: 闪念录入模式 (推荐绑定至 F8)"
     fi
 
-    if grep -q "horae-normal" "$BINDINGS_LUA" || grep -q "omarchy-launch-or-focus-tui.*horae" "$BINDINGS_LUA"; then
+    # 只认 Normal 自己的绑定：闪念绑定的命令里也含 "omarchy-launch-or-focus-tui
+    # ...horae"，用宽泛的 horae 匹配会把 Flash 当成 Normal 已配置。
+    if grep -qE "horae[_-]normal|omarchy-launch-or-focus-tui ['\"]?horae-normal" "$BINDINGS_LUA"; then
         ok "已配置快捷键: 应用一般模式 (Normal TUI mode)"
     else
         warn "未配置快捷键: 应用一般模式 (推荐绑定至 SUPER + SHIFT + I)"
